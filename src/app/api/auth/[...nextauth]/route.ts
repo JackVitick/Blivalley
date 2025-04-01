@@ -15,6 +15,13 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
+        }
+      }
     }),
     GithubProvider({
       clientId: process.env.GITHUB_ID || "",
@@ -81,6 +88,16 @@ export const authOptions: NextAuthOptions = {
               photoURL: user.image,
               authProvider: account.provider,
               authId: account.providerAccountId,
+              settings: {
+                theme: 'system',
+                notifications: true,
+                sessionCapture: {
+                  enabled: true,
+                  captureApps: true,
+                  captureBrowsers: true,
+                  saveLocation: 'local'
+                }
+              }
             });
           } else {
             // Update lastLogin
@@ -93,37 +110,31 @@ export const authOptions: NextAuthOptions = {
           token.id = user.id;
         }
       }
-
       return token;
     },
     async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.id as string;
+      if (session.user) {
+        session.user.id = token.id;
       }
       return session;
     },
     async redirect({ url, baseUrl }) {
-      // After sign in, redirect to dashboard
-      if (url.startsWith('/api/auth/signin') || url === '/api/auth/callback/google' || url === '/api/auth/callback/github') {
-        return `${baseUrl}/dashboard`;
-      }
-      // Default case - ensure we're using the right base URL
-      if (url.startsWith(baseUrl)) return url;
-      // Otherwise, redirect to the base URL
+      // Allows relative callback URLs
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // Allows callback URLs on the same origin
+      else if (new URL(url).origin === baseUrl) return url;
       return baseUrl;
-    }
+    },
   },
   pages: {
-    signIn: "/auth/signin",
-    error: "/auth/error",
+    signIn: '/auth/signin',
+    error: '/auth/signin',
   },
   session: {
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
-  debug: process.env.NODE_ENV === "development",
 };
 
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };

@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcrypt";
+import { rateLimit } from "@/lib/rate-limit";
+
+// Rate limit configuration
+const limiter = rateLimit({
+  interval: 60 * 1000, // 1 minute
+  uniqueTokenPerInterval: 500
+});
 
 export async function POST(req: NextRequest) {
   try {
+    // Apply rate limiting
+    try {
+      await limiter.check(5, 'REGISTER_IP'); // 5 requests per minute
+    } catch {
+      return NextResponse.json(
+        { error: "Too many registration attempts. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const { name, email, password } = body;
 
@@ -18,10 +35,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
     }
 
-    // Validate password strength
-    if (password.length < 8) {
+    // Strong password validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
       return NextResponse.json(
-        { error: "Password must be at least 8 characters long" },
+        { 
+          error: "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character" 
+        },
         { status: 400 }
       );
     }

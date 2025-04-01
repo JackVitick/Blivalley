@@ -17,6 +17,9 @@ import {
   User
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import mongoose from 'mongoose';
+import { cache } from 'react';
+import { getCsrfToken } from 'next-auth/react';
 
 interface UserSettings {
   displayName: string;
@@ -34,6 +37,36 @@ interface UserSettings {
   }
 }
 
+// Extend the session type to include id
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    }
+  }
+}
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI!, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
+  }
+};
+
+export const getCachedUser = cache(async (userId: string) => {
+  const user = await User.findById(userId);
+  return user;
+});
+
 export default function Settings() {
   const { data: session } = useSession();
   const { theme, setTheme } = useTheme();
@@ -41,6 +74,7 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings>({
     displayName: '',
     email: '',
@@ -57,12 +91,21 @@ export default function Settings() {
     }
   });
 
+  // Load CSRF token
+  useEffect(() => {
+    const loadCsrfToken = async () => {
+      const token = await getCsrfToken();
+      setCsrfToken(token || null);
+    };
+    loadCsrfToken();
+  }, []);
+
   // Load user settings
   useEffect(() => {
     if (session?.user?.id) {
       fetchUserSettings();
     }
-  }, [session]);
+  }, [session?.user?.id]);
 
   // Update theme when userSettings.settings.theme changes
   useEffect(() => {
@@ -162,6 +205,7 @@ export default function Settings() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken || '',
         },
         body: JSON.stringify({
           displayName: userSettings.displayName,
@@ -489,7 +533,7 @@ export default function Settings() {
                       >
                         <option value="local">Store locally only (default)</option>
                         <option value="cloud">Store in the cloud</option>
-                        <option value="none">Don't store snapshots</option>
+                        <option value="none">Don&apos;t store snapshots</option>
                       </select>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         {userSettings.settings.sessionCapture.saveLocation === 'local' && "Snapshots are stored only on your device and never uploaded"}
