@@ -4,6 +4,13 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectToDatabase from "@/lib/db";
 import Session from "@/models/Session";
 import Project from "@/models/Project";
+import { Types } from 'mongoose';
+
+interface SessionQuery {
+  userId: Types.ObjectId;
+  projectId?: Types.ObjectId;
+  status?: 'active' | 'completed';
+}
 
 // GET all sessions for the authenticated user
 export async function GET(req: NextRequest) {
@@ -19,25 +26,21 @@ export async function GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const projectId = url.searchParams.get("projectId");
-    const limit = parseInt(url.searchParams.get("limit") || "10", 10);
     const active = url.searchParams.get("active") === "true";
     
     await connectToDatabase();
     
-    const filter: any = { userId: session.user.id };
+    const query: SessionQuery = { userId: new Types.ObjectId(session.user.id) };
     
     if (projectId) {
-      filter.projectId = projectId;
+      query.projectId = new Types.ObjectId(projectId);
     }
     
-    if (active !== undefined) {
-      filter.isActive = active;
+    if (active) {
+      query.status = 'active';
     }
 
-    const sessions = await Session.find(filter)
-      .sort({ startTime: -1 })
-      .limit(limit);
-
+    const sessions = await Session.find(query).sort({ startTime: -1 });
     return NextResponse.json(sessions);
   } catch (error) {
     console.error("Error fetching sessions:", error);
@@ -61,96 +64,94 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectId, milestoneId, taskId, note } = body;
-
-    if (!projectId || !milestoneId || !taskId) {
+    
+    // Validate required fields
+    if (!body.projectId || !body.milestoneId || !body.taskId) {
       return NextResponse.json(
-        { error: "Project, milestone, and task IDs are required" },
+        { error: "Project ID, milestone ID, and task ID are required" },
         { status: 400 }
       );
     }
 
     await connectToDatabase();
-    
-    // Verify the project belongs to the user
+
+    // Check if project exists and belongs to user
     const project = await Project.findOne({
-      _id: projectId,
-      userId: session.user.id
+      _id: body.projectId,
+      userId: session.user.id,
     });
-    
+
     if (!project) {
       return NextResponse.json(
         { error: "Project not found" },
         { status: 404 }
       );
     }
-    
-    // Find the milestone and task
-    const milestone = project.milestones.id(milestoneId);
-    if (!milestone) {
-      return NextResponse.json(
-        { error: "Milestone not found" },
-        { status: 404 }
-      );
-    }
-    
-    const task = milestone.tasks.id(taskId);
-    if (!task) {
-      return NextResponse.json(
-        { error: "Task not found" },
-        { status: 404 }
-      );
-    }
-    
-    // End any active sessions for this user
-    await Session.updateMany(
-      { userId: session.user.id, isActive: true },
-      { 
-        isActive: false,
-        endTime: new Date(),
-        $push: { 
-          activities: { 
-            timestamp: new Date(), 
-            action: 'end',
-            metadata: { reason: 'auto_ended_for_new_session' }
-          } 
-        }
-      }
-    );
-    
-    // Update task status to in_progress if not already
-    if (task.status !== 'in_progress') {
-      task.status = 'in_progress';
-      
-      // Update milestone status if needed
-      if (milestone.status === 'not_started') {
-        milestone.status = 'in_progress';
-      }
-      
-      await project.save();
-    }
-    
-    // Create the new session
-    const newSession = await Session.create({
+
+    // Check if there's already an active session
+    const activeSession = await Session.findOne({
       userId: session.user.id,
-      projectId,
-      milestoneId,
-      taskId,
-      startTime: new Date(),
-      isActive: true,
-      note: note || '',
-      activities: [{
-        timestamp: new Date(),
-        action: 'start'
-      }]
+      status: 'active'
     });
 
-    return NextResponse.json(newSession, { status: 201 });
+    if (activeSession) {
+      return NextResponse.json({ error: 'You already have an active session' }, { status: 400 });
+    }
+
+    // Create the session
+    const newSession = await Session.create({
+      userId: session.user.id,
+      projectId: body.projectId,
+      milestoneId: body.milestoneId,
+      taskId: body.taskId,
+      startTime: new Date(),
+      status: 'active',
+      note: ''
+    });
+
+    return NextResponse.json(newSession);
   } catch (error) {
     console.error("Error creating session:", error);
     return NextResponse.json(
       { error: "Failed to create session" },
       { status: 500 }
     );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { sessionId, note } = body;
+
+    if (!sessionId) {
+      return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
+    }
+
+    await connectToDatabase();
+
+    const updatedSession = await Session.findOneAndUpdate(
+      { _id: new Types.ObjectId(sessionId), userId: new Types.ObjectId(session.user.id) },
+      {
+        status: 'completed',
+        endTime: new Date(),
+        note: note || ''
+      },
+      { new: true }
+    );
+
+    if (!updatedSession) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    return NextResponse.json(updatedSession);
+  } catch (error) {
+    console.error('Error updating session:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -5,20 +5,21 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { 
   Plus, 
-  ChevronDown, 
-  ChevronUp, 
+  Clock, 
   CheckCircle2, 
   Circle, 
-  Clock,
-  MoreVertical,
-  CalendarDays,
-  Search
+  ChevronDown, 
+  ChevronUp, 
+  MoreVertical, 
+  Search,
+  CalendarDays
 } from 'lucide-react';
 
 interface Task {
-  id: string;
+  _id: string;
   name: string;
   status: 'not_started' | 'in_progress' | 'completed';
+  notes: string;
   lastSession?: {
     timestamp: string;
     note: string;
@@ -26,7 +27,7 @@ interface Task {
 }
 
 interface Milestone {
-  id: string;
+  _id: string;
   name: string;
   status: 'not_started' | 'in_progress' | 'completed';
   tasks: Task[];
@@ -45,9 +46,9 @@ interface Project {
   milestones: Milestone[];
 }
 
-export default function Dashboard() {
+export default function ProjectsPage() {
   const { status } = useSession();
-  const [activeTab] = useState<'active'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [projects, setProjects] = useState<Project[]>([]);
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -64,7 +65,6 @@ export default function Dashboard() {
 
   // Fetch projects when component mounts
   useEffect(() => {
-    console.log('Dashboard mounted, session status:', status);
     if (status === 'authenticated') {
       fetchProjects();
     }
@@ -75,13 +75,11 @@ export default function Dashboard() {
     setIsLoading(true);
     setError(null);
     try {
-      console.log('Fetching projects...');
-      const response = await fetch(`/api/projects?status=active`);
+      const response = await fetch(`/api/projects?status=${activeTab}`);
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
       }
       const data = await response.json();
-      console.log('Projects fetched:', data);
       setProjects(data);
     } catch (err) {
       console.error('Error fetching projects:', err);
@@ -213,7 +211,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">All Projects</h1>
         <Link 
           href="/projects/new"
           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
@@ -235,32 +233,73 @@ export default function Dashboard() {
         <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
       </div>
       
-      {/* Projects List */}
-      {isLoading ? (
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'active'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            Active Projects
+          </button>
+          <button
+            onClick={() => setActiveTab('completed')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'completed'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            Completed Projects
+          </button>
+        </nav>
+      </div>
+      
+      {/* Loading State */}
+      {isLoading && (
         <div className="flex justify-center p-8">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
         </div>
-      ) : error ? (
+      )}
+      
+      {/* Error State */}
+      {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 rounded-lg p-4">
           {error}
         </div>
-      ) : filteredProjects.length === 0 ? (
+      )}
+      
+      {/* Empty State */}
+      {!isLoading && !error && filteredProjects.length === 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 p-10 text-center">
           <div className="mx-auto w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-gray-400 dark:text-gray-500 mb-4">
             <Plus className="w-7 h-7" />
           </div>
-          <h3 className="text-gray-800 dark:text-gray-200 font-medium mb-1">No active projects</h3>
+          <h3 className="text-gray-800 dark:text-gray-200 font-medium mb-1">
+            {activeTab === 'active' ? "No active projects" : "No completed projects"}
+          </h3>
           <p className="text-gray-500 dark:text-gray-400 mb-4">
-            Create a new project to get started tracking your progress
+            {activeTab === 'active' 
+              ? "Create a new project to get started tracking your progress" 
+              : "Complete projects will appear here once finished"}
           </p>
-          <Link 
-            href="/projects/new"
-            className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Create Your First Project
-          </Link>
+          {activeTab === 'active' && (
+            <Link 
+              href="/projects/new"
+              className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Create Your First Project
+            </Link>
+          )}
         </div>
-      ) : (
+      )}
+      
+      {/* Projects List */}
+      {!isLoading && !error && filteredProjects.length > 0 && (
         <div className="space-y-4">
           {filteredProjects.map(project => (
             <div key={project._id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
@@ -327,21 +366,25 @@ export default function Dashboard() {
               </div>
               
               {/* Last Session Note */}
-              {findLastWorkedTask(project) ? (
-                <div className="px-4 py-2 border-t border-b border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 flex items-center gap-2">
-                  <Clock className="text-blue-500 dark:text-blue-400 w-4 h-4" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
-                    <span className="font-medium">Last session:</span> {findLastWorkedTask(project)?.task.lastSession?.note}
-                  </span>
-                </div>
-              ) : (
-                project.milestones.length > 0 && (
-                  <div className="px-4 py-2 border-t border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex items-center gap-2">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      Ready to begin working on {project.milestones[0].name}
-                    </span>
-                  </div>
-                )
+              {activeTab === 'active' && (
+                <>
+                  {findLastWorkedTask(project) ? (
+                    <div className="px-4 py-2 border-t border-b border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 flex items-center gap-2">
+                      <Clock className="text-blue-500 dark:text-blue-400 w-4 h-4" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        <span className="font-medium">Last session:</span> {findLastWorkedTask(project)?.task.lastSession?.note}
+                      </span>
+                    </div>
+                  ) : (
+                    project.milestones.length > 0 && (
+                      <div className="px-4 py-2 border-t border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex items-center gap-2">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          Ready to begin working on {project.milestones[0].name}
+                        </span>
+                      </div>
+                    )
+                  )}
+                </>
               )}
               
               {/* Expanded Content */}
@@ -360,7 +403,7 @@ export default function Dashboard() {
                   {project.milestones.length > 0 ? (
                     <div className="space-y-2">
                       {project.milestones.map(milestone => (
-                        <div key={milestone.id} className="flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-700/30 rounded-lg">
+                        <div key={milestone._id} className="flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-700/30 rounded-lg">
                           {getStatusIcon(milestone.status)}
                           <span className={`flex-1 ${
                             milestone.status === 'completed' 
@@ -384,7 +427,7 @@ export default function Dashboard() {
                       href={`/projects/${project._id}`}
                       className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium flex items-center gap-1"
                     >
-                      Continue Project
+                      View Project Details
                       <ChevronDown className="w-4 h-4 rotate-270" />
                     </Link>
                   </div>
@@ -396,4 +439,4 @@ export default function Dashboard() {
       )}
     </div>
   );
-}
+} 

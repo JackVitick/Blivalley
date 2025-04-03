@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowRight, ArrowLeft, Plus, X } from 'lucide-react';
 
 interface ProjectData {
@@ -10,6 +9,11 @@ interface ProjectData {
   description: string;
   category: string;
   deadline: string;
+  status: 'active' | 'completed' | 'archived';
+  settings: {
+    autoStart: boolean;
+    notifications: boolean;
+  };
   milestones: {
     name: string;
     tasks: string[];
@@ -26,10 +30,32 @@ export default function NewProject() {
     description: '',
     category: '',
     deadline: '',
+    status: 'active',
+    settings: {
+      autoStart: false,
+      notifications: true
+    },
     milestones: []
   });
 
   const totalSteps = 4;
+
+  // Validate if current step is complete
+  const isStepComplete = () => {
+    switch (step) {
+      case 1:
+        return projectData.name.trim() !== '' && projectData.category.trim() !== '';
+      case 2:
+        return true; // Description is optional
+      case 3:
+        return projectData.milestones.length > 0 && 
+               projectData.milestones.every(m => m.name.trim() !== '');
+      case 4:
+        return true; // Tasks are optional
+      default:
+        return false;
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setProjectData({
@@ -110,42 +136,47 @@ export default function NewProject() {
     setError(null);
     
     try {
+      // Transform milestones data to match the schema
+      const transformedMilestones = projectData.milestones.map(milestone => ({
+        name: milestone.name,
+        status: 'not_started',
+        tasks: milestone.tasks.map(taskName => ({
+          name: taskName,
+          status: 'not_started',
+          notes: ''
+        }))
+      }));
+
+      // Format the data for the API
+      const projectPayload = {
+        ...projectData,
+        milestones: transformedMilestones,
+        deadline: projectData.deadline ? new Date(projectData.deadline).toISOString() : null
+      };
+
+      console.log('Sending project data:', JSON.stringify(projectPayload, null, 2));
+
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(projectData),
+        body: JSON.stringify(projectPayload),
       });
       
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create project');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create project');
       }
+      
+      const data = await response.json();
       
       // Redirect to the new project page
       router.push(`/projects/${data._id}`);
     } catch (err) {
+      console.error('Error creating project:', err);
       setError(err instanceof Error ? err.message : 'An error occurred while creating the project');
       setIsSubmitting(false);
-    }
-  };
-
-  // Validate if current step is complete
-  const isStepComplete = () => {
-    switch (step) {
-      case 1:
-        return projectData.name.trim() !== '';
-      case 2:
-        return true; // Description is optional
-      case 3:
-        return projectData.milestones.length > 0 && 
-               projectData.milestones.every(m => m.name.trim() !== '');
-      case 4:
-        return true; // Tasks are optional
-      default:
-        return false;
     }
   };
 
@@ -157,12 +188,12 @@ export default function NewProject() {
           <div className="flex justify-between mb-2">
             {Array.from({ length: totalSteps }).map((_, index) => (
               <div key={index} className="flex flex-col items-center">
-                <div 
+                <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center ${
                     step > index + 1 
                       ? 'bg-green-500 text-white dark:bg-green-600' 
                       : step === index + 1 
-                        ? 'bg-blue-600 text-white' 
+                        ? 'bg-blue-600 text-white'
                         : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                   }`}
                 >
@@ -175,7 +206,7 @@ export default function NewProject() {
                   )}
                 </div>
                 {index < totalSteps - 1 && (
-                  <div 
+                  <div
                     className={`h-1 w-16 mt-4 ${
                       step > index + 1 
                         ? 'bg-green-500 dark:bg-green-600' 
@@ -195,7 +226,7 @@ export default function NewProject() {
               {error}
             </div>
           )}
-          
+
           {/* Step 1: Project Name & Category */}
           {step === 1 && (
             <div>
@@ -218,7 +249,7 @@ export default function NewProject() {
                     onChange={handleInputChange}
                   />
                 </div>
-                
+
                 <div>
                   <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Category (Optional)
@@ -267,7 +298,7 @@ export default function NewProject() {
                     onChange={handleInputChange}
                   />
                 </div>
-                
+
                 <div>
                   <label htmlFor="deadline" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Deadline (Optional)
@@ -290,7 +321,7 @@ export default function NewProject() {
             <div>
               <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">What are the main phases of this project?</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">Break down your project into major milestones</p>
-              
+
               <div className="space-y-3">
                 {projectData.milestones.length > 0 ? (
                   projectData.milestones.map((milestone, index) => (
@@ -305,7 +336,7 @@ export default function NewProject() {
                         value={milestone.name}
                         onChange={(e) => updateMilestone(index, e.target.value)}
                       />
-                      <button 
+                      <button
                         onClick={() => removeMilestone(index)}
                         className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400"
                       >
@@ -357,7 +388,7 @@ export default function NewProject() {
                               value={task}
                               onChange={(e) => updateTask(milestoneIndex, taskIndex, e.target.value)}
                             />
-                            <button 
+                            <button
                               onClick={() => removeTask(milestoneIndex, taskIndex)}
                               className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400"
                             >

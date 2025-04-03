@@ -25,6 +25,10 @@ async function connectToDatabase() {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      family: 4
     };
 
     console.log('Attempting to connect to MongoDB...');
@@ -35,6 +39,7 @@ async function connectToDatabase() {
       return mongoose;
     }).catch((error) => {
       console.error('MongoDB connection error:', error);
+      cached.promise = null;
       throw error;
     });
   }
